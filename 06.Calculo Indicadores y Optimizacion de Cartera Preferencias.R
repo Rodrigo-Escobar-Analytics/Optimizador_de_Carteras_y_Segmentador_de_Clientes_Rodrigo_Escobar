@@ -185,7 +185,7 @@ for (i in seq_along(CUENTAS)) {
   message("Optimizando ", i, " / ", length(CUENTAS), " -> ", id_cuenta)
   
   # PROMEDIO POR ACTIVO INDICAR TABLA PRINCIPAL DONDE SE ENCUENTRA LAS CARTERAS A OPTIMIZAR
-  uni <- UNIVERSO_MUESTRA %>%
+  uni <- UNIVERSO_OPTIMIZACION %>%
     filter(ID_CUENTA == id_cuenta) %>%
     distinct(NEMO, .keep_all = TRUE) %>%
     select(NEMO, RET_PROM_DIARIO)
