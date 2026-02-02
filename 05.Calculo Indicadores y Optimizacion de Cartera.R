@@ -192,6 +192,7 @@ RETORNOS_HISTORICOS_PIVOT <- RETORNOS_HISTORICOS %>%
   select(FECHA, NEMO, RET_DIARIO) %>%
   pivot_wider(names_from = NEMO, values_from = RET_DIARIO)
 
+# ACTIVAR SI HAY QUE REALIZAR DEBUG
 
  # CUENTAS_MUESTRA <- UNIVERSO_OPTIMIZACION %>%
  #   distinct(ID_CUENTA) %>%
@@ -250,7 +251,7 @@ for (i in seq_along(CUENTAS)) {
   
   Sigma <- cov(R_c, use = "pairwise.complete.obs")
   
-  # Estabilización numérica mínima
+  # AJUSTE DE ESTABILIZACION MINIMA DEL VALOR DE LA MATRIZ DE COVARIANZAS
   Sigma <- Sigma + diag(1e-10, n)
   
   # OPTIMIZACION DEL SHARPE
@@ -282,12 +283,13 @@ for (i in seq_along(CUENTAS)) {
     NEMO      = nemos,
     PESO_OPT  = w_opt)
   
-  # OBTENER TABLA DE METRICAS
+  # OBTENER VALORES PARA TABLA DE METRICAS
   ret_opt <- sum(w_opt * mu)
   desvest_opt <- sqrt(drop(t(w_opt) %*% Sigma %*% w_opt))
   sharpe_opt <- (ret_opt - rf_diario) / desvest_opt
   
-  # TABLA FINAL DE RESULTADOS DE LA OPTIMIZACION CON LOS PARAMETROS IMPORTANTES
+  # CALCULO DE METRICAS, TABLA FINAL DE RESULTADOS DE LA OPTIMIZACION CON LOS PARAMETROS IMPORTANTES
+
   
   RESULTADOS_RESUMEN[[i]] <- tibble(
     ID_CUENTA = id_cuenta,
@@ -308,9 +310,6 @@ for (i in seq_along(CUENTAS)) {
 TABLA_PESOS_OPTM <- bind_rows(RESULTADOS_PESOS)
 TABLA_RESUMEN_OPTM <- bind_rows(RESULTADOS_RESUMEN)
   
-
-TABLA_PESOS_OPTM$X<-TABLA_PESOS_OPTM$PESO_OPT*100
-
 # DETERMINO UN MINIMO TOTAL, SI SUPERA EL MINIMO EL PESO DE LA ACCION = 0
 
 EPSILON <- 1e-6
@@ -398,7 +397,7 @@ TBL_DATA_SHARES_ACCOUNTS_FINAL <- TBL_DATA_SHARES_ACCOUNTS_FINAL %>%
 
 
 
-write.table(TBL_DATA_SHARES_ACCOUNTS_FINAL, file = "FILES/INTERMEDIO/05_PESOS_INDICADORES_CARTERA.CSV", sep = ";",
+write.table(TBL_DATA_SHARES_ACCOUNTS_FINAL, file = "FILES/OUTPUT/05_PESOS_INDICADORES_CARTERA.CSV", sep = ";",
             na = "", dec = ",", row.names = FALSE,
             col.names = TRUE)
 

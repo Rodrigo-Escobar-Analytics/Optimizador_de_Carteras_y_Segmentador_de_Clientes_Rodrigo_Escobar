@@ -87,7 +87,7 @@ METRICAS_ACCION <- PRECIOS_HISTORICOS %>%
 
 # CRUCE INFORMACION DE LAS CUENTAS CON LA BASE DE PREFERENCIAS
 
-PREF_TOTALES_<-PREF_TOTALES%>%left_join(CUENTAS_DATOS,by="ID_CLIENTE")
+PREF_TOTALES<-PREF_TOTALES%>%left_join(CUENTAS_DATOS,by="ID_CLIENTE")
 
 # DEJO EL ID DE LA CUENTA DESPUES DEL ID DEL CLIENTE
 
@@ -139,13 +139,16 @@ RETORNOS_HISTORICOS <- PRECIOS_HISTORICOS %>%
   ) %>%
   ungroup()
 
+# PIVOTEO LA TABLA PARA DEJAR EN FILA LAS FECHAS Y EN COLUMNAS LOS RETORNOS DE LAS ACCIONES
 
 RETORNOS_HISTORICOS_PIVOT <- RETORNOS_HISTORICOS %>%
   select(FECHA, NEMO, RET_DIARIO) %>%
   pivot_wider(names_from = NEMO, values_from = RET_DIARIO)
 
 
-# 
+# ACTIVAR SI HAY QUE REALIZAR DEBUG
+
+
 # CUENTAS_MUESTRA <- UNIVERSO_OPTIMIZACION %>%
 #    distinct(ID_CUENTA) %>%
 #    slice_sample(n = 100) %>%
@@ -154,24 +157,34 @@ RETORNOS_HISTORICOS_PIVOT <- RETORNOS_HISTORICOS %>%
 # UNIVERSO_MUESTRA <- UNIVERSO_OPTIMIZACION %>%
 #    filter(ID_CUENTA %in% CUENTAS_MUESTRA)
 
-
-
-rf <- 0.03 / 252
+# EXTRAIGO LOS ID DE LAS CUENTAS QUE SE PROCESARAN EN EL OPTIMIZADOR
 
 CUENTAS <- UNIVERSO_OPTIMIZACION %>%
   distinct(ID_CUENTA) %>%
   pull(ID_CUENTA)
 
+
+# INICIALIZO LISTAS PARA INGRESAR LOS RESULTADOS DE PESOS Y RESUMEN TOMANDO EN CONSIDERACION EL Q DE CUENTAS
+
+
 RESULTADOS_PESOS <- vector("list", length(CUENTAS))
 RESULTADOS_RESUMEN <- vector("list", length(CUENTAS))
 
+# || MODELO OPTIMIZADOR DE CARTERAS PARA LA BASE COMPLETA ||
+
+# PARA LA CUENTA I DENTRO DE LA LISTA CUENTAS
+
 for (i in seq_along(CUENTAS)) {
+  
+  # IDENTIFICO LA CUENTA ESPECIFICA
   
   id_cuenta <- CUENTAS[i]
   
+  # MENSAJE LOG DE ESTADO REVISION DE CUENTA
+  
   message("Optimizando ", i, " / ", length(CUENTAS), " -> ", id_cuenta)
   
-  # ===== 1) μ por activo =====
+  # PROMEDIO POR ACTIVO INDICAR TABLA PRINCIPAL DONDE SE ENCUENTRA LAS CARTERAS A OPTIMIZAR
   uni <- UNIVERSO_MUESTRA %>%
     filter(ID_CUENTA == id_cuenta) %>%
     distinct(NEMO, .keep_all = TRUE) %>%
@@ -184,23 +197,26 @@ for (i in seq_along(CUENTAS)) {
   n <- length(mu)
   if (n < 2) next
   
-  # ===== 2) Σ desde retornos históricos =====
+  # SUMATORIA DESDE RETORNOS HISTORICOS
   R_c <- RETORNOS_HISTORICOS_PIVOT %>%
     select(all_of(c("FECHA", nemos))) %>%
     select(-FECHA) %>%
     as.matrix()
   
+  # CALCULO DE LA COVARIANZA
+  
   Sigma <- cov(R_c, use = "pairwise.complete.obs")
   
-  # Estabilización numérica mínima
+  # AJUSTE DE ESTABILIZACION MINIMA  DEL VALOR DE LA MATRIZ DE COVARIANZAS
   Sigma <- Sigma + diag(1e-10, n)
   
-  # ===== 3) Optimización Sharpe =====
+  # OPTIMIZACION DEL SHARPE
+  
   sharpe_neg <- function(w) {
     ret <- sum(w * mu)
     vol2 <- drop(t(w) %*% Sigma %*% w)
     if (!is.finite(vol2) || vol2 <= 1e-12) return(1e6)
-    - (ret - rf) / sqrt(vol2)
+    - (ret - rf_diario) / sqrt(vol2)
   }
   
   res <- nloptr(
@@ -211,6 +227,7 @@ for (i in seq_along(CUENTAS)) {
     ub = rep(1, n),
     opts = list(
       algorithm = "NLOPT_LN_COBYLA",
+      #MAXIMA CANTIDAD DE EVALUACIONES
       maxeval   = 3000
     )
   )
@@ -218,17 +235,19 @@ for (i in seq_along(CUENTAS)) {
   w_opt <- as.numeric(res$solution)
   names(w_opt) <- nemos
   
-  # ===== tabla de pesos =====
+  # OBTENER TABLA DE PESOS
   RESULTADOS_PESOS[[i]] <- tibble(
     ID_CUENTA = id_cuenta,
     NEMO      = nemos,
     PESO_OPT_PREF  = w_opt
   )
   
-  # ===== métricas =====
+  # OBTENER VALORES PARA TABLA DE METRICAS
   ret_opt <- sum(w_opt * mu)
   desvest_opt <- sqrt(drop(t(w_opt) %*% Sigma %*% w_opt))
   sharpe_opt <- (ret_opt - rf) / desvest_opt
+  
+  # CALCULO DE METRICAS Y CREACION DE TABLA
   
   RESULTADOS_RESUMEN[[i]] <- tibble(
     ID_CUENTA = id_cuenta,
@@ -245,19 +264,25 @@ for (i in seq_along(CUENTAS)) {
   )}
 
 
-
+# CONCATENACION DE LOS PESOS OPTIMOS Y EL RESUMEN POR CADA UNA DE LAS CUENTAS
 
 TABLA_PESOS_OPTM <- bind_rows(RESULTADOS_PESOS)
 TABLA_RESUMEN_OPTM <- bind_rows(RESULTADOS_RESUMEN)
 
-
+# DETERMINO UN MINIMO TOTAL, SI SUPERA EL MINIMO EL PESO DE LA ACCION = 0
 
 EPSILON <- 1e-6
+
+# GENERO LA CONDICION PARA HACER = 0 AQUELLOS PESOS QUE SON MUY CERCANOS A 0 (EPSILON)
+
 
 TABLA_PESOS_OPTM <- TABLA_PESOS_OPTM %>%
   mutate(
     PESO_OPT_PREF = if_else(abs(PESO_OPT_PREF) < EPSILON, 0, PESO_OPT_PREF)
   )
+
+
+# AJUSTE PARA QUE LA SUMA DE LASS ACCIONES SEAN = 1
 
 
 TABLA_PESOS_OPTM <- TABLA_PESOS_OPTM %>%
@@ -268,13 +293,14 @@ TABLA_PESOS_OPTM <- TABLA_PESOS_OPTM %>%
   ungroup()
 
 
+# CRUCE DE LA TABLA DE CUENTAS Y TENENCIAS CON LA TABLA: DE PESOS OPTIMOS, TABLA DE INDICADORES RESUMEN
 
 
 TBL_DATA_SHARES_ACCOUNTS_FINAL <- TBL_DATA_SHARES_ACCOUNTS_FINAL %>%
   left_join(TABLA_PESOS_OPTM,   by = c("ID_CUENTA", "NEMO")) %>%
   left_join(TABLA_RESUMEN_OPTM, by = "ID_CUENTA")
 
-
+# CRUCE DEL PRECIO DE LAS ACCIONES EN CLP EN LA BASE DE LA TENENCIA Y CUENTAS
 
 TBL_DATA_SHARES_ACCOUNTS_FINAL<-TBL_DATA_SHARES_ACCOUNTS_FINAL%>%left_join(PRECIOS_ACCIONES,by="NEMO")
 
@@ -339,7 +365,7 @@ TBL_DATA_SHARES_ACCOUNTS_FINAL <- TBL_DATA_SHARES_ACCOUNTS_FINAL %>%
 
 
 
-write.table(TBL_DATA_SHARES_ACCOUNTS_FINAL, file = "FILES/INTERMEDIO/06_TABLA_RESUMEN_FINAL_CON_PREFERENCIAS.CSV", sep = ";",
+write.table(TBL_DATA_SHARES_ACCOUNTS_FINAL, file = "FILES/OUTPUT/06_TABLA_RESUMEN_FINAL_CON_PREFERENCIAS.CSV", sep = ";",
             na = "", dec = ",", row.names = FALSE,
             col.names = TRUE)
 
