@@ -225,14 +225,15 @@ for (i in seq_along(CUENTAS)) {
     eval_g_eq = function(w) sum(w) - 1,
     lb = rep(0, n),
     ub = rep(1, n),
+    # MODELO A USAR
     opts = list(
       algorithm  = "NLOPT_LN_AUGLAG_EQ",
       local_opts = list(
         algorithm = "NLOPT_LN_COBYLA",
-        maxeval   = 1000
-      ),
-      maxeval = 2000
-    ))
+        #MAXIMA CANTIDAD DE EVALUACIONES
+        maxeval   = 3000),
+      #MAXIMA CANTIDAD DE EVALUACIONES
+      maxeval = 4000))
   
   w_opt <- as.numeric(res$solution)
   names(w_opt) <- nemos
