@@ -1,0 +1,412 @@
+
+# PARTE 5 DEL RECOMENDADOR DE CARTERAS (SOLO CARTERA ACTUAL SIN PREFERENCIAS):
+
+# ESTA PARTE CONTIENE EL MODELO OPTIMIZADOR DE LA CARTERA EL CUAL RECORRE TODA LA BASE
+# DE CLIENTES Y SUS CUENTAS, CALCULANDO EL % OPTIMO SEGUN LA MAXIMIZACION DEL RATIO SHARPE
+# CON ESTO SE OBTIENEN LOS PESOS OPTIMOS SEGUN LA CARTERA ACTUAL
+# ADEMAS SE OBTIENEN INDICADORES FINANCIEROS RESPECTO A LA CARTERA OPTIMIZADA: 
+# RETORNO, DESVIACION ESTANDAR, SHARPE POR CARTERA (ANUAL, MENSUAL, DIARIO)
+# ADEMAS SE DETERMINA EL GAP ENTRE LA CARTERA ACTUAL, EL RETORNO, LA DESVIACION ESTANDAR Y LA TENENCIA ACTUAL
+# SE DETERMINA CUANTO DEBE COMPRAR O VENDER O MANTENER DE UNA ACCION EN ESPECIFICO 
+# ADEMAS SE INDICA SI DEBE APORTAR UN MOMNTO ADICIONAL PARA CUADRAR LA RECOMENDACION
+# CUALQUIER DUDA CONSULTAR AL AUTOR: 
+# RODRIGO ESCOBAR LANDAETA | RESCOBARL@FEN.UCHILE.CL | LANDAETA77@GMAIL.COM
+
+library(readxl)
+library(readr)
+library(dplyr)
+library(tidyr)
+library(tidyquant)
+library(nloptr)
+library(writexl)
+library(tibble)
+
+source("FUNCTIONS/YFINANCE_BATCH.R")
+
+
+# CARGA DE ARCHIVO DE ETAPA 4
+
+TBL_DATA_SHARES_ACCOUNTS <- read_csv2("FILES/INTERMEDIO/04_MONTOS_EN_CUSTODIA.CSV")
+DICCIONARIO_TICKERS <- read_excel("FILES/INPUTS/DICCIONARIO_TICKERS.xlsx")
+
+# TASA LIBRE DE RIESGO PARA SHARPE
+
+rf <- 0.03
+rf_diario = rf / 252
+rf_mensual = rf / 12
+
+# LISTADO DE TICKERS DEL DICCIONARIO
+
+TICKERS <- DICCIONARIO_TICKERS %>% distinct(NEMO) %>% pull(NEMO)
+
+PRECIOS_HISTORICOS <- read_csv2("FILES/INTERMEDIO/05_PRECIOS_ACCIONES_TOTAL.CSV")
+names(PRECIOS_HISTORICOS)[1]<-"symbol"
+names(PRECIOS_HISTORICOS)[2]<-"date"
+names(PRECIOS_HISTORICOS)[8]<-"adjusted"
+
+
+# PRECIOS_HISTORICOS <- tq_get_batch(TICKERS = TICKERS,
+#   from  = Sys.Date() - 365)
+# 
+# tickers_extraidos <- unique(PRECIOS_HISTORICOS$symbol)
+# 
+# tickers_faltantes <- setdiff(TICKERS, tickers_extraidos)
+# 
+# 
+# if (length(tickers_faltantes) > 0) {
+#   
+#   PRECIOS_REINTENTO <- tq_get_batch(
+#     TICKERS   = tickers_faltantes,
+#     from      = Sys.Date() - 365,
+#     batch_size = 5,
+#     sleep_sec  = 15)
+#   
+# } else {
+#   PRECIOS_REINTENTO <- NULL
+# }
+# 
+# PRECIOS_HISTORICOS_FINAL <- bind_rows(PRECIOS_HISTORICOS,
+#   PRECIOS_REINTENTO) %>%
+#   distinct(symbol, date, .keep_all = TRUE)
+# 
+# tickers_fallidos <- setdiff(tickers_faltantes,
+#   unique(PRECIOS_REINTENTO$symbol))
+# 
+# if (length(tickers_fallidos) > 0) {
+#   write.csv(
+#     data.frame(
+#       ticker = tickers_fallidos,
+#       fecha  = Sys.Date()),
+#     "FILES/INTERMEDIO/tickers_fallidos.csv",
+#     row.names = FALSE)
+# }
+# 
+
+
+
+# CALCULO MONTO TOTAL INVERTIDO EN LA CUENTA EN CLP
+
+
+TOTAL_CUENTA <- TBL_DATA_SHARES_ACCOUNTS %>% group_by(ID_CLIENTE, ID_CUENTA) %>%
+  summarise(TOTAL_MONTO_CUSTODIA = sum(MONTO_EN_CUSTODIA, na.rm = TRUE),
+    .groups = "drop")
+
+
+# CALCULO LAS PROPORCIONES/PESOS ACTUALES DE LOS MONTOS DE LAS ACCIONES 
+
+TBL_PESOS_CUENTA <- TBL_DATA_SHARES_ACCOUNTS %>% left_join(
+  TOTAL_CUENTA, by = c("ID_CLIENTE", "ID_CUENTA")) %>%
+  mutate(PESO = MONTO_EN_CUSTODIA / TOTAL_MONTO_CUSTODIA) %>%
+  select(ID_CLIENTE,ID_CUENTA,NEMO,PESO)
+
+# CALCULO DE LAS ACCIONES: RETORNO DIARIO, DESVIACION ESTANDAR DIARIA
+
+METRICAS_ACCION <- PRECIOS_HISTORICOS %>% group_by(symbol) %>%
+  tq_transmute(select     = adjusted,
+    mutate_fun = periodReturn,
+    period     = "daily",
+    col_rename = "RET_DIARIO") %>%
+  summarise(RET_PROM_DIARIO = mean(RET_DIARIO, na.rm = TRUE),
+    DE_DIARIA       = sd(RET_DIARIO, na.rm = TRUE),
+    .groups = "drop") %>%
+  rename(NEMO = symbol)
+
+
+# TABLA PRECIOS HISTORICOS CON PESO, RETORNO PROMEDIO DIARIO ACCION, DESVIACION ESTANDAR ACCION, POR CUENTA
+
+PRECIOS_HISTORICOS_FINAL <- TBL_PESOS_CUENTA %>%
+  inner_join(METRICAS_ACCION, by = "NEMO")
+
+# CALCULO DE INDICADORES FINANCIEROS: RETORNO PROMEDIO, DESVIACION ESTANDAR, SHARPE DE LA CARTERA (DIARIO MENSUAL ANUAL)
+
+TBL_INDICADORES_CUENTA <- PRECIOS_HISTORICOS_FINAL %>%
+  
+  group_by(ID_CLIENTE, ID_CUENTA) %>%
+  
+  # SUMA PONDERADA DEL RETORNO*PESO Y DESVIACION ESTANDAR PONDERADA POR EL PESO
+  
+  summarise(RET_PROM_DIARIO = sum(PESO * RET_PROM_DIARIO, na.rm = TRUE),
+    DE_DIARIA = sqrt(
+      sum((PESO^2) * (DE_DIARIA^2), na.rm = TRUE)),
+    
+    #INDICADORES MENUSAL
+    
+    RET_PROM_MENSUAL = RET_PROM_DIARIO * 21,
+    DE_MENSUAL       = DE_DIARIA * sqrt(21),
+    
+    #INDICADORES ANUAL
+    
+    RET_PROM_ANUAL   = RET_PROM_DIARIO * 252,
+    DE_ANUAL         = DE_DIARIA * sqrt(252),
+    
+    # RATIOS SHARPE
+    
+    SHARPE_DIARIO  = (RET_PROM_DIARIO  - rf_diario)  / DE_DIARIA,
+    SHARPE_MENSUAL = (RET_PROM_MENSUAL - rf_mensual) / DE_MENSUAL,
+    SHARPE_ANUAL   = (RET_PROM_ANUAL   - rf)   / DE_ANUAL,
+    
+    .groups = "drop")
+
+
+
+# AGREGAR INDICADORES DE CARTERA TABLA DE TENENCIA
+
+
+TBL_DATA_SHARES_ACCOUNTS_FINAL <- TBL_DATA_SHARES_ACCOUNTS %>% left_join(TBL_INDICADORES_CUENTA,
+    by = c("ID_CLIENTE", "ID_CUENTA"))
+
+# AGREGAR PESOS RELATIVOS A TABLA DE TENENCIA
+
+TBL_DATA_SHARES_ACCOUNTS_FINAL <- TBL_DATA_SHARES_ACCOUNTS_FINAL %>%left_join(
+    TBL_PESOS_CUENTA,by = c("ID_CLIENTE", "ID_CUENTA","NEMO"))
+
+
+# PREPARACION TABLA PARA OPTIMIZACION (UNIVERSO_OPTIMIZACION)
+
+UNIVERSO_OPTIMIZACION<-TBL_DATA_SHARES_ACCOUNTS_FINAL%>%select("ID_CLIENTE","ID_CUENTA",
+                                                               "NEMO","PESO")
+
+
+# AGREGO A TABLA OPTIMIZACION: RETORNOS Y DESVIACION ESTANDAR POR ACCION
+
+UNIVERSO_OPTIMIZACION <- UNIVERSO_OPTIMIZACION %>% left_join(METRICAS_ACCION,
+    by = "NEMO")
+
+
+# RENOMBRO COLUMNAS DE PRECIO HISTORICO
+
+PRECIOS_HISTORICOS <- PRECIOS_HISTORICOS %>%rename(NEMO   = symbol,
+    FECHA  = date,
+    PRECIO = adjusted)
+
+# CALCULO EL RENDIMIENTO DIARIO DE LA ACCION CON LOGARITMO
+
+RETORNOS_HISTORICOS <- PRECIOS_HISTORICOS %>% arrange(NEMO, FECHA) %>%
+  group_by(NEMO) %>%
+  mutate(RET_DIARIO = log(PRECIO / lag(PRECIO))) %>%
+  ungroup()
+
+# PIVOTEO LA TABLA PARA DEJAR EN FILA LAS FECHAS Y EN COLUMNAS LOS RETORNOS DE LAS ACCIONES
+
+RETORNOS_HISTORICOS_PIVOT <- RETORNOS_HISTORICOS %>%
+  select(FECHA, NEMO, RET_DIARIO) %>%
+  pivot_wider(names_from = NEMO, values_from = RET_DIARIO)
+
+
+ # CUENTAS_MUESTRA <- UNIVERSO_OPTIMIZACION %>%
+ #   distinct(ID_CUENTA) %>%
+ #   slice_sample(n = 500) %>%
+ #  pull(ID_CUENTA)
+ # 
+ # UNIVERSO_MUESTRA <- UNIVERSO_OPTIMIZACION %>%
+ #   filter(ID_CUENTA %in% CUENTAS_MUESTRA)
+ # 
+
+
+# EXTRAIGO LOS ID DE LAS CUENTAS QUE SE PROCESARAN EN EL OPTIMIZADOR
+
+CUENTAS <- UNIVERSO_OPTIMIZACION %>%
+  distinct(ID_CUENTA) %>%
+  pull(ID_CUENTA)
+
+# INICIALIZO LISTAS PARA INGRESAR LOS RESULTADOS DE PESOS Y RESUMEN TOMANDO EN CONSIDERACION EL Q DE CUENTAS
+
+RESULTADOS_PESOS <- vector("list", length(CUENTAS))
+RESULTADOS_RESUMEN <- vector("list", length(CUENTAS))
+
+# || MODELO OPTIMIZADOR DE CARTERAS PARA LA BASE COMPLETA ||
+
+
+for (i in seq_along(CUENTAS)) {
+  
+  # IDENTIFICO LA CUENTA ESPECIFICA
+  
+  id_cuenta <- CUENTAS[i]
+  
+  # MENSAJE LOG DE ESTADO REVISION DE CUENTA
+  
+  message("Optimizando ", i, " / ", length(CUENTAS), " -> ", id_cuenta)
+  
+  # PROMEDIO POR ACTIVO INDICAR TABLA PRINCIPAL DONDE SE ENCUENTRA LAS CARTERAS A OPTIMIZAR
+  uni <- UNIVERSO_OPTIMIZACION %>%
+    filter(ID_CUENTA == id_cuenta) %>%
+    distinct(NEMO, .keep_all = TRUE) %>%
+    select(NEMO, RET_PROM_DIARIO)
+  
+  nemos <- uni$NEMO
+  mu <- as.numeric(uni$RET_PROM_DIARIO)
+  names(mu) <- nemos
+  
+  n <- length(mu)
+  if (n < 2) next
+  
+  # SUMATORIA DESDE RETORNOS HISTORICOS
+  R_c <- RETORNOS_HISTORICOS_PIVOT %>%
+    select(all_of(c("FECHA", nemos))) %>%
+    select(-FECHA) %>%
+    as.matrix()
+  
+  # CALCULO DE LA COVARIANZA
+  
+  Sigma <- cov(R_c, use = "pairwise.complete.obs")
+  
+  # Estabilización numérica mínima
+  Sigma <- Sigma + diag(1e-10, n)
+  
+  # OPTIMIZACION DEL SHARPE
+  
+  sharpe_neg <- function(w) {
+    ret <- sum(w * mu)
+    vol2 <- drop(t(w) %*% Sigma %*% w)
+    if (!is.finite(vol2) || vol2 <= 1e-12) return(1e6)
+    - (ret - rf_diario) / sqrt(vol2)
+  }
+  
+  res <- nloptr(
+    x0 = rep(1 / n, n),
+    eval_f = sharpe_neg,
+    eval_g_eq = function(w) sum(w) - 1,
+    lb = rep(0, n),
+    ub = rep(1, n),
+    opts = list(
+      algorithm = "NLOPT_LN_COBYLA",
+      #MAXIMA CANTIDAD DE EVALUACIONES
+      maxeval   = 3000))
+  
+  w_opt <- as.numeric(res$solution)
+  names(w_opt) <- nemos
+  
+  # OBTENER TABLA DE PESOS
+  RESULTADOS_PESOS[[i]] <- tibble(
+    ID_CUENTA = id_cuenta,
+    NEMO      = nemos,
+    PESO_OPT  = w_opt)
+  
+  # OBTENER TABLA DE METRICAS
+  ret_opt <- sum(w_opt * mu)
+  desvest_opt <- sqrt(drop(t(w_opt) %*% Sigma %*% w_opt))
+  sharpe_opt <- (ret_opt - rf_diario) / desvest_opt
+  
+  # TABLA FINAL DE RESULTADOS DE LA OPTIMIZACION CON LOS PARAMETROS IMPORTANTES
+  
+  RESULTADOS_RESUMEN[[i]] <- tibble(
+    ID_CUENTA = id_cuenta,
+    RET_ESPERADO_DIARIO_OPTM = ret_opt,
+    DESVEST_DIARIA_OPTM     = desvest_opt,
+    SHARPE_DIARIO_OPTM      = sharpe_opt,
+    RET_ESPERADO_MENSUAL_OPTM = ret_opt * 21,
+    RET_ESPERADO_ANUAL_OPTM   = ret_opt * 252,
+    DESVEST_MENSUAL_OPTM = desvest_opt * sqrt(21),
+    DESVEST_ANUAL_OPTM   = desvest_opt * sqrt(252),
+    SHARPE_MENSUAL_OPTM  = (ret_opt * 21) / (desvest_opt * sqrt(21)),
+    SHARPE_ANUAL_OPTM    = (ret_opt * 252) / (desvest_opt * sqrt(252)),
+    MSG = res$message)}
+  
+
+# CONCATENACION DE LOS PESOS OPTIMOS Y EL RESUMEN POR CADA UNA DE LAS CUENTAS
+
+TABLA_PESOS_OPTM <- bind_rows(RESULTADOS_PESOS)
+TABLA_RESUMEN_OPTM <- bind_rows(RESULTADOS_RESUMEN)
+  
+
+TABLA_PESOS_OPTM$X<-TABLA_PESOS_OPTM$PESO_OPT*100
+
+# DETERMINO UN MINIMO TOTAL, SI SUPERA EL MINIMO EL PESO DE LA ACCION = 0
+
+EPSILON <- 1e-6
+
+# GENERO LA CONDICION PARA HACER = 0 AQUELLOS PESOS QUE SON MUY CERCANOS A 0 (EPSILON)
+
+TABLA_PESOS_OPTM <- TABLA_PESOS_OPTM %>%
+  mutate(PESO_OPT = if_else(abs(PESO_OPT) < EPSILON, 0, PESO_OPT))
+
+# AJUSTE PARA QUE LA SUMA DE LASS ACCIONES SEAN = 1
+
+TABLA_PESOS_OPTM <- TABLA_PESOS_OPTM %>%
+  group_by(ID_CUENTA) %>%
+  mutate(
+    PESO_OPT = PESO_OPT / sum(PESO_OPT)
+  ) %>%
+  ungroup()
+
+# CRUCE DE LA TABLA DE CUENTAS Y TENENCIAS CON LA TABLA: DE PESOS OPTIMOS, TABLA DE INDICADORES RESUMEN
+
+TBL_DATA_SHARES_ACCOUNTS_FINAL <- TBL_DATA_SHARES_ACCOUNTS_FINAL %>%
+  left_join(TABLA_PESOS_OPTM,   by = c("ID_CUENTA", "NEMO")) %>%
+  left_join(TABLA_RESUMEN_OPTM, by = "ID_CUENTA")
+
+
+
+# CALCULO DEL MONTO EN CUSTODIA TOTAL PARA LA CUENTA
+
+TBL_DATA_SHARES_ACCOUNTS_FINAL <- TBL_DATA_SHARES_ACCOUNTS_FINAL %>%
+  group_by(ID_CUENTA) %>%
+  mutate(MONTO_EN_CUSTODIA_TOTAL = sum(MONTO_EN_CUSTODIA, na.rm = TRUE)) %>%
+  ungroup()
+
+
+# CALCULO DEL MONTO EN CUSTODIA OPTIMO PARA LA ACCION SEGUN EL PESO OPTIMO
+
+TBL_DATA_SHARES_ACCOUNTS_FINAL <- TBL_DATA_SHARES_ACCOUNTS_FINAL %>%
+  mutate(MONTO_EN_CUSTODIA_OPT = PESO_OPT * MONTO_EN_CUSTODIA_TOTAL)
+
+
+# CALCULO DE LA CANTIDAD DE ACCIONES OPTIMAS A COMPRAR
+
+TBL_DATA_SHARES_ACCOUNTS_FINAL <- TBL_DATA_SHARES_ACCOUNTS_FINAL %>%
+  mutate(
+    # CANTIDADES EN CUSTODIA CON REDONDEO
+    CANTIDAD_EN_CUSTODIA_OPT = round(MONTO_EN_CUSTODIA_OPT / PRECIO_ULT, 0),
+    
+    # APORTE ADICIONAR POR EFECTO DEL REDONDEO
+    APORTE_ADICIONAL = pmax(0,(CANTIDAD_EN_CUSTODIA_OPT * PRECIO_ULT) - MONTO_EN_CUSTODIA_OPT))
+
+# CALCULO DE GAPS POR INDICADORES Y ETIQUETAS CATEGORICAS
+
+TBL_DATA_SHARES_ACCOUNTS_FINAL <- TBL_DATA_SHARES_ACCOUNTS_FINAL %>%
+  mutate(
+    # GAPs Diario
+    GAP_RET_DIARIO     = RET_ESPERADO_DIARIO_OPTM - RET_PROM_DIARIO,
+    GAP_DESV_DIARIA    = DESVEST_DIARIA_OPTM - DE_DIARIA,
+    GAP_SHARPE_DIARIO  = SHARPE_DIARIO_OPTM - SHARPE_DIARIO,
+    
+    # GAPs Mensual
+    GAP_RET_MENSUAL    = RET_ESPERADO_MENSUAL_OPTM - RET_PROM_MENSUAL,
+    GAP_DESV_MENSUAL   = DESVEST_MENSUAL_OPTM - DE_MENSUAL,
+    GAP_SHARPE_MENSUAL = SHARPE_MENSUAL_OPTM - SHARPE_MENSUAL,
+    
+    # GAPs Anual
+    GAP_RET_ANUAL      = RET_ESPERADO_ANUAL_OPTM - RET_PROM_ANUAL,
+    GAP_DESV_ANUAL     = DESVEST_ANUAL_OPTM - DE_ANUAL,
+    GAP_SHARPE_ANUAL   = SHARPE_ANUAL_OPTM - SHARPE_ANUAL
+  ) %>%
+  mutate(
+    FLAG_MEJORA_RIESGO_ANUAL   = ifelse(GAP_DESV_ANUAL < 0, "MEJORA", "EMPEORA"),
+    FLAG_MEJORA_RETORNO_ANUAL = ifelse(GAP_RET_ANUAL > 0, "MEJORA", "EMPEORA"),
+    
+    # GAP de Cantidades en Custodia
+    GAP_Q_CUSTODIA = CANTIDAD_EN_CUSTODIA_OPT - CANTIDAD_EN_CUSTODIA,
+    
+    FLAG_ACCION_Q = case_when(
+      GAP_Q_CUSTODIA > 0 ~ "COMPRAR",
+      GAP_Q_CUSTODIA < 0 ~ "VENDER",
+      TRUE               ~ "MANTENER"
+    )
+  )
+
+
+
+
+
+write.table(TBL_DATA_SHARES_ACCOUNTS_FINAL, file = "FILES/INTERMEDIO/05_PESOS_INDICADORES_CARTERA.CSV", sep = ";",
+            na = "", dec = ",", row.names = FALSE,
+            col.names = TRUE)
+
+
+
+write.table(PRECIOS_HISTORICOS, file = "FILES/INTERMEDIO/05_PRECIOS_ACCIONES_TOTAL.CSV", sep = ";",
+            na = "", dec = ",", row.names = FALSE,
+            col.names = TRUE)
+
+
+

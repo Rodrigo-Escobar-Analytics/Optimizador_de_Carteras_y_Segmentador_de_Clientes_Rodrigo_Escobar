@@ -30,7 +30,39 @@ TICKERS<-DICCIONARIO_TICKERS%>%distinct(NEMO)%>%pull(NEMO)
 
 ULTIMOS_PRECIOS <- tq_get_batch(TICKERS=TICKERS,from=Sys.Date()-10,batch_size=25,sleep_sec  = 5)
 
-# OBTENGO EL ULTIMO PRECIOA AJUSTADO DISPONIBLE UTILIZANDO SLICE_MAX, CAMBIANDO LOS NOMBRES DE LOS CAMPOS
+# REVISAR TICKETS EXTRAIDOS
+
+tickers_extraidos <- unique(ULTIMOS_PRECIOS$symbol)
+
+# REVISAR TICKETS TIME OUT
+
+tickers_faltantes <- setdiff(TICKERS, tickers_extraidos)
+
+# RECUPERAR TICKETS FALTANTES
+
+if (length(tickers_faltantes) > 0) {
+
+  PRECIOS_REINTENTO <- tq_get_batch(
+    TICKERS   = tickers_faltantes,
+    from      = Sys.Date() - 10,
+    batch_size = 5,
+    sleep_sec  = 15
+  )
+
+} else {
+  PRECIOS_REINTENTO <- NULL
+}
+
+# TABLA TOTAL DE TICKETS CORREGIDA
+
+PRECIOS_HISTORICOS_FINAL <- bind_rows(
+  ULTIMOS_PRECIOS,
+  PRECIOS_REINTENTO
+) %>%
+  distinct(symbol, date, .keep_all = TRUE)
+
+
+# OBTENGO EL ULTIMO PRECIO AJUSTADO DISPONIBLE UTILIZANDO SLICE_MAX, CAMBIANDO LOS NOMBRES DE LOS CAMPOS
 
 ULTIMO_PRECIO_AJUSTADO<-ULTIMOS_PRECIOS%>%group_by(symbol)%>%
   slice_max(date, n = 1, with_ties = FALSE)%>%ungroup() %>%
