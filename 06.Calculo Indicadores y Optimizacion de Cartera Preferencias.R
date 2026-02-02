@@ -226,11 +226,13 @@ for (i in seq_along(CUENTAS)) {
     lb = rep(0, n),
     ub = rep(1, n),
     opts = list(
-      algorithm = "NLOPT_LN_COBYLA",
-      #MAXIMA CANTIDAD DE EVALUACIONES
-      maxeval   = 3000
-    )
-  )
+      algorithm  = "NLOPT_LN_AUGLAG_EQ",
+      local_opts = list(
+        algorithm = "NLOPT_LN_COBYLA",
+        maxeval   = 1000
+      ),
+      maxeval = 2000
+    ))
   
   w_opt <- as.numeric(res$solution)
   names(w_opt) <- nemos
@@ -245,7 +247,7 @@ for (i in seq_along(CUENTAS)) {
   # OBTENER VALORES PARA TABLA DE METRICAS
   ret_opt <- sum(w_opt * mu)
   desvest_opt <- sqrt(drop(t(w_opt) %*% Sigma %*% w_opt))
-  sharpe_opt <- (ret_opt - rf) / desvest_opt
+  sharpe_opt <- (ret_opt - rf_diario) / desvest_opt
   
   # CALCULO DE METRICAS Y CREACION DE TABLA
   
