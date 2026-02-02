@@ -21,6 +21,8 @@ library(nloptr)
 library(writexl)
 library(tibble)
 
+# CARGO FUNCION BATCH
+
 source("FUNCTIONS/YFINANCE_BATCH.R")
 
 
@@ -39,49 +41,38 @@ rf_mensual = rf / 12
 
 TICKERS <- DICCIONARIO_TICKERS %>% distinct(NEMO) %>% pull(NEMO)
 
-PRECIOS_HISTORICOS <- read_csv2("FILES/INTERMEDIO/05_PRECIOS_ACCIONES_TOTAL.CSV")
-names(PRECIOS_HISTORICOS)[1]<-"symbol"
-names(PRECIOS_HISTORICOS)[2]<-"date"
-names(PRECIOS_HISTORICOS)[8]<-"adjusted"
+# EXTRAIGO LA INFORMACION DE LOS TICKERS DEL LISTADO DE ACCIONES
 
+PRECIOS_HISTORICOS <- tq_get_batch(TICKERS = TICKERS,
+  from  = Sys.Date() - 365)
 
-# PRECIOS_HISTORICOS <- tq_get_batch(TICKERS = TICKERS,
-#   from  = Sys.Date() - 365)
-# 
-# tickers_extraidos <- unique(PRECIOS_HISTORICOS$symbol)
-# 
-# tickers_faltantes <- setdiff(TICKERS, tickers_extraidos)
-# 
-# 
-# if (length(tickers_faltantes) > 0) {
-#   
-#   PRECIOS_REINTENTO <- tq_get_batch(
-#     TICKERS   = tickers_faltantes,
-#     from      = Sys.Date() - 365,
-#     batch_size = 5,
-#     sleep_sec  = 15)
-#   
-# } else {
-#   PRECIOS_REINTENTO <- NULL
-# }
-# 
-# PRECIOS_HISTORICOS_FINAL <- bind_rows(PRECIOS_HISTORICOS,
-#   PRECIOS_REINTENTO) %>%
-#   distinct(symbol, date, .keep_all = TRUE)
-# 
-# tickers_fallidos <- setdiff(tickers_faltantes,
-#   unique(PRECIOS_REINTENTO$symbol))
-# 
-# if (length(tickers_fallidos) > 0) {
-#   write.csv(
-#     data.frame(
-#       ticker = tickers_fallidos,
-#       fecha  = Sys.Date()),
-#     "FILES/INTERMEDIO/tickers_fallidos.csv",
-#     row.names = FALSE)
-# }
-# 
+# REVISO EL TOTAL DE TICKERS EXTRAIDOS
 
+tickers_extraidos <- unique(PRECIOS_HISTORICOS$symbol)
+
+# DETERMINO FALTANTES
+
+tickers_faltantes <- setdiff(TICKERS, tickers_extraidos)
+
+# REINGRESO FUNCION PARA OBTENER FALTANTES
+
+if (length(tickers_faltantes) > 0) {
+
+  PRECIOS_REINTENTO <- tq_get_batch(
+    TICKERS   = tickers_faltantes,
+    from      = Sys.Date() - 365,
+    batch_size = 5,
+    sleep_sec  = 15)
+
+} else {
+  PRECIOS_REINTENTO <- NULL
+}
+
+# CONCATENO BASES
+
+PRECIOS_HISTORICOS_FINAL <- bind_rows(PRECIOS_HISTORICOS,
+  PRECIOS_REINTENTO) %>%
+  distinct(symbol, date, .keep_all = TRUE)
 
 
 # CALCULO MONTO TOTAL INVERTIDO EN LA CUENTA EN CLP
