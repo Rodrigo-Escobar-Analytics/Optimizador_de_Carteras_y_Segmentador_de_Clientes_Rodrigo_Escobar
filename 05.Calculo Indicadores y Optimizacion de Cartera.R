@@ -9,6 +9,9 @@
 # ADEMAS SE DETERMINA EL GAP ENTRE LA CARTERA ACTUAL, EL RETORNO, LA DESVIACION ESTANDAR Y LA TENENCIA ACTUAL
 # SE DETERMINA CUANTO DEBE COMPRAR O VENDER O MANTENER DE UNA ACCION EN ESPECIFICO 
 # ADEMAS SE INDICA SI DEBE APORTAR UN MOMNTO ADICIONAL PARA CUADRAR LA RECOMENDACION
+
+# TIEMPO ESTIMADO DE EJECUCION: 1 HORA - 1 HORA 10 MINUTOS
+
 # CUALQUIER DUDA CONSULTAR AL AUTOR: 
 # RODRIGO ESCOBAR LANDAETA | RESCOBARL@FEN.UCHILE.CL | LANDAETA77@GMAIL.COM
 
@@ -42,45 +45,45 @@ rf_mensual = rf / 12
 TICKERS <- DICCIONARIO_TICKERS %>% distinct(NEMO) %>% pull(NEMO)
 
 
-PRECIOS_HISTORICOS <- read_csv2("FILES/INTERMEDIO/05_PRECIOS_ACCIONES_TOTAL.CSV")
-names(PRECIOS_HISTORICOS)[1]<-"symbol"
-names(PRECIOS_HISTORICOS)[2]<-"date"
-names(PRECIOS_HISTORICOS)[8]<-"adjusted"
+#PRECIOS_HISTORICOS <- read_csv2("FILES/INTERMEDIO/05_PRECIOS_ACCIONES_TOTAL.CSV")
+#names(PRECIOS_HISTORICOS)[1]<-"symbol"
+#names(PRECIOS_HISTORICOS)[2]<-"date"
+#names(PRECIOS_HISTORICOS)[8]<-"adjusted"
 
-# 
-# # EXTRAIGO LA INFORMACION DE LOS TICKERS DEL LISTADO DE ACCIONES
-# 
-# PRECIOS_HISTORICOS <- tq_get_batch(TICKERS = TICKERS,
-#   from  = Sys.Date() - 365)
-# 
-# # REVISO EL TOTAL DE TICKERS EXTRAIDOS
-# 
-# tickers_extraidos <- unique(PRECIOS_HISTORICOS$symbol)
-# 
-# # DETERMINO FALTANTES
-# 
-# tickers_faltantes <- setdiff(TICKERS, tickers_extraidos)
-# 
-# # REINGRESO FUNCION PARA OBTENER FALTANTES
-# 
-# if (length(tickers_faltantes) > 0) {
-# 
-#   PRECIOS_REINTENTO <- tq_get_batch(
-#     TICKERS   = tickers_faltantes,
-#     from      = Sys.Date() - 365,
-#     batch_size = 5,
-#     sleep_sec  = 15)
-# 
-# } else {
-#   PRECIOS_REINTENTO <- NULL
-# }
-# 
-# # CONCATENO BASES
-# 
-# PRECIOS_HISTORICOS_FINAL <- bind_rows(PRECIOS_HISTORICOS,
-#   PRECIOS_REINTENTO) %>%
-#   distinct(symbol, date, .keep_all = TRUE)
-# 
+
+# EXTRAIGO LA INFORMACION DE LOS TICKERS DEL LISTADO DE ACCIONES
+
+PRECIOS_HISTORICOS <- tq_get_batch(TICKERS = TICKERS,
+  from  = Sys.Date() - 365)
+
+# REVISO EL TOTAL DE TICKERS EXTRAIDOS
+
+tickers_extraidos <- unique(PRECIOS_HISTORICOS$symbol)
+
+# DETERMINO FALTANTES
+
+tickers_faltantes <- setdiff(TICKERS, tickers_extraidos)
+
+# REINGRESO FUNCION PARA OBTENER FALTANTES
+
+if (length(tickers_faltantes) > 0) {
+
+  PRECIOS_REINTENTO <- tq_get_batch(
+    TICKERS   = tickers_faltantes,
+    from      = Sys.Date() - 365,
+    batch_size = 5,
+    sleep_sec  = 15)
+
+} else {
+  PRECIOS_REINTENTO <- NULL
+}
+
+# CONCATENO BASES
+
+PRECIOS_HISTORICOS_FINAL <- bind_rows(PRECIOS_HISTORICOS,
+  PRECIOS_REINTENTO) %>%
+  distinct(symbol, date, .keep_all = TRUE)
+
 
 # CALCULO MONTO TOTAL INVERTIDO EN LA CUENTA EN CLP
 
@@ -273,9 +276,9 @@ for (i in seq_along(CUENTAS)) {
       local_opts = list(
         algorithm = "NLOPT_LN_COBYLA",
         #MAXIMA CANTIDAD DE EVALUACIONES
-        maxeval   = 3000),
+        maxeval   = 8000),
       #MAXIMA CANTIDAD DE EVALUACIONES
-      maxeval = 4000))
+      maxeval = 8000))
   
   w_opt <- as.numeric(res$solution)
   names(w_opt) <- nemos
@@ -411,4 +414,4 @@ write.table(PRECIOS_HISTORICOS, file = "FILES/INTERMEDIO/05_PRECIOS_ACCIONES_TOT
             col.names = TRUE)
 
 
-
+#21:16 - 
