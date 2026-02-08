@@ -7,7 +7,7 @@ library(scales)
 library(openxlsx)
 library(ggrepel)
 
-DATA_PATH <- "FILES/OUTPUT/06_TABLA_RESUMEN_FINAL_CON_PREFERENCIAS.CSV"
+DATA_PATH <- "FILES/OUTPUT/05_PESOS_INDICADORES_CARTERA.csv"
 
 # CARGA DE DATOS
 df <- read_delim(
@@ -17,7 +17,7 @@ df <- read_delim(
   show_col_types = FALSE
 )
 
-# SET DE DATOS CON ID_CLIENTE+ID_CUENTA
+# SET DE DATOS CON ID_CLIENTE+ID_CUENTA (SIN PREFERENCIAS)
 acct_df <- df %>%
   arrange(ID_CLIENTE, ID_CUENTA) %>%
   distinct(ID_CLIENTE, ID_CUENTA, .keep_all = TRUE) %>%
@@ -25,22 +25,17 @@ acct_df <- df %>%
     ID_CLIENTE, ID_CUENTA, USERNAME, NOMBRE_EJECUTIVO, JEFE_AREA,
     MONTO_EN_CUSTODIA_TOTAL,
     RET_PROM_ANUAL, DE_ANUAL, SHARPE_ANUAL,
-    RET_ESPERADO_ANUAL_OPTM_PREF, DESVEST_ANUAL_OPTM_PREF, SHARPE_ANUAL_OPTM_PREF,
+    RET_ESPERADO_ANUAL_OPTM, DESVEST_ANUAL_OPTM, SHARPE_ANUAL_OPTM,
     GAP_RET_ANUAL, GAP_DESV_ANUAL, GAP_SHARPE_ANUAL,
-    MSG_PREF, FLAG_MEJORA_RIESGO_ANUAL, FLAG_MEJORA_RETORNO_ANUAL
+    MSG, FLAG_MEJORA_RIESGO_ANUAL, FLAG_MEJORA_RETORNO_ANUAL
   )
-
-# VISUALIZADOR INTERFAZ
 
 ui <- fluidPage(
   tags$head(tags$style(HTML("
     .container, .container-fluid { width: 100% !important; max-width: 100% !important; }
     .dataTables_wrapper { width: 100% !important; }
   "))),
-  
-  titlePanel("Dashboard de Carteras Optimizadas - Version Con Preferencias MVP1"),
-  
-  # FILTROS DEL DASHBOARD
+  titlePanel("Dashboard de Carteras Optimizadas - Sin Preferencias"),
   fluidRow(
     column(2, selectInput("jefe", "JEFE AREA", choices = "All", selected = "All")),
     column(4, selectInput("ejecutivo", "NOMBRE EJECUTIVO", choices = "All", selected = "All")),
@@ -48,10 +43,7 @@ ui <- fluidPage(
     column(2, selectInput("cuenta", "ID_CUENTA", choices = "All", selected = "All")),
     column(2, selectInput("mejora", "MEJORA/EMPEORA", choices = "All", selected = "All"))
   ),
-  
   hr(),
-  
-  # TABLERO DE INDICADORES + BOTONES DE DESCARGA
   fluidRow(
     column(
       12,
@@ -59,7 +51,6 @@ ui <- fluidPage(
       hr(),
       plotOutput("risk_return", height = 420, width = "100%"),
       hr(),
-      
       fluidRow(
         column(
           12,
@@ -68,9 +59,7 @@ ui <- fluidPage(
           DTOutput("tabla_resumen")
         )
       ),
-      
       hr(),
-      
       fluidRow(
         column(
           12,
@@ -83,14 +72,12 @@ ui <- fluidPage(
   )
 )
 
-# INICIALIZADOR DE DASHBOARD
 server <- function(input, output, session) {
   
   keep_or_all <- function(current_value, choices) {
     if (!is.null(current_value) && current_value %in% choices) current_value else "All"
   }
   
-  # INICIALIZA ELECCIONES, AGREGA ALL (TODO)
   observe({
     updateSelectInput(session, "jefe",
                       choices = c("All", sort(unique(acct_df$JEFE_AREA))),
@@ -109,7 +96,6 @@ server <- function(input, output, session) {
                       selected = "All")
   })
   
-  # 1) JEFE_AREA -> filtra EJECUTIVO + CLIENTE + CUENTA + MEJORA
   observeEvent(input$jefe, {
     d <- acct_df
     if (input$jefe != "All") d <- d %>% filter(JEFE_AREA == input$jefe)
@@ -135,7 +121,6 @@ server <- function(input, output, session) {
                       selected = keep_or_all(input$mejora, mejora_choices))
   }, ignoreInit = TRUE)
   
-  # 2) EJECUTIVO -> filtra CLIENTE + CUENTA + MEJORA
   observeEvent(input$ejecutivo, {
     d <- acct_df
     if (input$jefe != "All") d <- d %>% filter(JEFE_AREA == input$jefe)
@@ -157,7 +142,6 @@ server <- function(input, output, session) {
                       selected = keep_or_all(input$mejora, mejora_choices))
   }, ignoreInit = TRUE)
   
-  # 3) CLIENTE -> filtra CUENTA + MEJORA
   observeEvent(input$cliente, {
     d <- acct_df
     if (input$jefe != "All") d <- d %>% filter(JEFE_AREA == input$jefe)
@@ -175,7 +159,6 @@ server <- function(input, output, session) {
                       selected = keep_or_all(input$mejora, mejora_choices))
   }, ignoreInit = TRUE)
   
-  # 4) MEJORA -> filtra CLIENTE + CUENTA
   observeEvent(input$mejora, {
     d <- acct_df
     if (input$jefe != "All") d <- d %>% filter(JEFE_AREA == input$jefe)
@@ -193,7 +176,6 @@ server <- function(input, output, session) {
                       selected = keep_or_all(input$cuenta, acc_choices))
   }, ignoreInit = TRUE)
   
-  # FILTROS FINALES DE LA TABLA
   filtered_accts <- reactive({
     out <- acct_df
     if (input$jefe != "All") out <- out %>% filter(JEFE_AREA == input$jefe)
@@ -204,7 +186,6 @@ server <- function(input, output, session) {
     out
   })
   
-  # KPIs RESUMEN ES (ETIQUETA DE INDICADORES)
   output$kpis <- renderUI({
     accts <- filtered_accts()
     
@@ -212,14 +193,14 @@ server <- function(input, output, session) {
     aum <- (sum(accts$MONTO_EN_CUSTODIA_TOTAL, na.rm = TRUE))
     
     sharpe_act <- mean(accts$SHARPE_ANUAL, na.rm = TRUE)
-    sharpe_opt <- mean(accts$SHARPE_ANUAL_OPTM_PREF, na.rm = TRUE)
+    sharpe_opt <- mean(accts$SHARPE_ANUAL_OPTM, na.rm = TRUE)
     gap_sharpe <- mean(accts$GAP_SHARPE_ANUAL, na.rm = TRUE)
     
     ret_act <- mean(accts$RET_PROM_ANUAL, na.rm = TRUE)
-    ret_opt <- mean(accts$RET_ESPERADO_ANUAL_OPTM_PREF, na.rm = TRUE)
+    ret_opt <- mean(accts$RET_ESPERADO_ANUAL_OPTM, na.rm = TRUE)
     
     de_act <- mean(accts$DE_ANUAL, na.rm = TRUE)
-    de_opt <- mean(accts$DESVEST_ANUAL_OPTM_PREF, na.rm = TRUE)
+    de_opt <- mean(accts$DESVEST_ANUAL_OPTM, na.rm = TRUE)
     
     q_mejora  <- sum(accts$FLAG_MEJORA_RETORNO_ANUAL == "MEJORA", na.rm = TRUE)
     q_empeora <- sum(accts$FLAG_MEJORA_RETORNO_ANUAL == "EMPEORA", na.rm = TRUE)
@@ -231,46 +212,38 @@ server <- function(input, output, session) {
     q_compra <- sum(sub$FLAG_ACCION_Q == "COMPRAR", na.rm = TRUE)
     q_venta <- sum(sub$FLAG_ACCION_Q == "VENDER", na.rm = TRUE)
     q_mantener <- sum(sub$FLAG_ACCION_Q == "MANTENER", na.rm = TRUE)
-    prefs_n <- sum(sub$MONTO_EN_CUSTODIA == 0, na.rm = TRUE)
+    prefs_n <- NA_integer_  # no aplica en sin preferencias
     
     tagList(
       h3("INDICADORES CLAVE RESUMEN"),
-      
       fluidRow(
         column(4, tags$div(tags$b("Q Cuentas: "), n_accts)),
-        column(4, tags$div(tags$b("Monto en custodia total (PESOS): "), comma(aum, accuracy = 1))),
+        column(4, tags$div(tags$b("Monto en custodia total (PESOS): "), comma(aum, accuracy = 1)))
       ),
-
       fluidRow(
         column(4, tags$div(tags$b("Ret Esp Anual (normal): "), percent(ret_act, accuracy = 0.1))),
-        column(4, tags$div(tags$b("Ret Esp Anual (optimo): "), percent(ret_opt, accuracy = 0.1)))      
+        column(4, tags$div(tags$b("Ret Esp Anual (óptimo): "), percent(ret_opt, accuracy = 0.1)))
       ),
-            
       fluidRow(
         column(4, tags$div(tags$b("Desv.Est. Anual (normal): "), percent(de_act, accuracy = 0.1))),
-        column(4, tags$div(tags$b("Desv.Est. Anual (optimo): "), percent(de_opt, accuracy = 0.1)))       
+        column(4, tags$div(tags$b("Desv.Est. Anual (óptimo): "), percent(de_opt, accuracy = 0.1)))
       ),
-      
       fluidRow(
         column(4, tags$div(tags$b("Avg Sharpe (normal): "), sprintf("%.3f", sharpe_act))),
-        column(4, tags$div(tags$b("Avg Sharpe (optimo): "), sprintf("%.3f", sharpe_opt)))
+        column(4, tags$div(tags$b("Avg Sharpe (óptimo): "), sprintf("%.3f", sharpe_opt)))
       ),
-      
       fluidRow(
         column(4, tags$div(tags$b("Q COMPRAR: "), q_compra)),
         column(4, tags$div(tags$b("Q VENDER: "), q_venta)),
         column(4, tags$div(tags$b("Q MANTENER: "), q_mantener))
       ),
-      
       fluidRow(
-        column(4, tags$div(tags$b("Prefs agregadas: "), prefs_n)),
         column(4, tags$div(tags$b("Q MEJORA / EMPEORA RENTABILIDAD: "), q_mejora, " / ", q_empeora)),
+        column(4, tags$div(tags$b("Avg GAP Sharpe: "), sprintf("%.3f", gap_sharpe))),
         column(4, tags$div(""))
       )
     )
   })
-  
-  # GRAFICO RIESGO RETORNO ANTIGUO Y NUEVO - CON ETIQUETAS
   
   output$risk_return <- renderPlot({
     accts <- filtered_accts()
@@ -282,29 +255,14 @@ server <- function(input, output, session) {
       (input$cuenta  != "All")
     
     plot_df <- dplyr::bind_rows(
-      accts %>%
-        transmute(
-          ID_CUENTA,
-          Risk = DE_ANUAL,
-          Return = RET_PROM_ANUAL,
-          Tipo = "Actual"
-        ),
-      accts %>%
-        transmute(
-          ID_CUENTA,
-          Risk = DESVEST_ANUAL_OPTM_PREF,
-          Return = RET_ESPERADO_ANUAL_OPTM_PREF,
-          Tipo = "Óptima"
-        )
+      accts %>% transmute(ID_CUENTA, Risk = DE_ANUAL,              Return = RET_PROM_ANUAL,          Tipo = "Actual"),
+      accts %>% transmute(ID_CUENTA, Risk = DESVEST_ANUAL_OPTM,    Return = RET_ESPERADO_ANUAL_OPTM, Tipo = "Óptima")
     ) %>%
       filter(is.finite(Risk), is.finite(Return))
     
     p <- ggplot(plot_df, aes(x = Risk, y = Return, color = Tipo)) +
       geom_point(alpha = 0.95, size = 3.6) +
-      scale_color_manual(values = c(
-        "Actual" = "#D81B60",
-        "Óptima" = "#0072B2"
-      )) +
+      scale_color_manual(values = c("Actual" = "#D81B60", "Óptima" = "#0072B2")) +
       labs(
         title = "Risk vs Return (Annual): Actual vs Óptima",
         x = "Annual Risk",
@@ -332,40 +290,32 @@ server <- function(input, output, session) {
     p
   })
   
-  # TABLA RESUMEN POR CARTERA
   resumen_cartera <- reactive({
     df %>%
       semi_join(filtered_accts(), by = c("ID_CLIENTE", "ID_CUENTA")) %>%
       group_by(ID_CLIENTE, ID_CUENTA) %>%
       summarise(
-        # Retorno
-        RET_PROM_ANUAL          = first(RET_PROM_ANUAL),
-        RET_PROM_ANUAL_OPTM_PREF = first(RET_ESPERADO_ANUAL_OPTM_PREF),
-        GAP_RET_ANUAL           = first(GAP_RET_ANUAL),
+        RET_PROM_ANUAL           = first(RET_PROM_ANUAL),
+        RET_PROM_ANUAL_OPTM      = first(RET_ESPERADO_ANUAL_OPTM),
+        GAP_RET_ANUAL            = first(GAP_RET_ANUAL),
         
-        # Riesgo
-        DESVEST_ANUAL           = first(DE_ANUAL),
-        DESVEST_ANUAL_OPTM_PREF = first(DESVEST_ANUAL_OPTM_PREF),
-        GAP_DESV_ANUAL          = first(GAP_DESV_ANUAL),
+        DESVEST_ANUAL            = first(DE_ANUAL),
+        DESVEST_ANUAL_OPTM       = first(DESVEST_ANUAL_OPTM),
+        GAP_DESV_ANUAL           = first(GAP_DESV_ANUAL),
         
-        # Sharpe
-        SHARPE_ANUAL            = first(SHARPE_ANUAL),
-        SHARPE_ANUAL_OPTM_PREF  = first(SHARPE_ANUAL_OPTM_PREF),
-        GAP_SHARPE_ANUAL        = first(GAP_SHARPE_ANUAL),
+        SHARPE_ANUAL             = first(SHARPE_ANUAL),
+        SHARPE_ANUAL_OPTM        = first(SHARPE_ANUAL_OPTM),
+        GAP_SHARPE_ANUAL         = first(GAP_SHARPE_ANUAL),
         
-        # Flags
         FLAG_MEJORA_RETORNO_ANUAL = first(FLAG_MEJORA_RETORNO_ANUAL),
         FLAG_MEJORA_RIESGO_ANUAL  = first(FLAG_MEJORA_RIESGO_ANUAL),
         
-        # Conteos
         Q_ACCIONES  = n(),
-        Q_COMPRAR   = sum(FLAG_ACCION_Q == "COMPRAR"),
-        Q_VENDER    = sum(FLAG_ACCION_Q == "VENDER"),
-        Q_MANTENER  = sum(FLAG_ACCION_Q == "MANTENER"),
+        Q_COMPRAR   = sum(FLAG_ACCION_Q == "COMPRAR", na.rm = TRUE),
+        Q_VENDER    = sum(FLAG_ACCION_Q == "VENDER", na.rm = TRUE),
+        Q_MANTENER  = sum(FLAG_ACCION_Q == "MANTENER", na.rm = TRUE),
         
-        # Monto (lo agregaste acá)
         MONTO_CUSTODIA = sum(MONTO_EN_CUSTODIA, na.rm = TRUE),
-        
         .groups = "drop"
       )
   })
@@ -378,14 +328,8 @@ server <- function(input, output, session) {
       width = "100%"
     ) %>%
       formatPercentage(
-        c(
-          "RET_PROM_ANUAL",
-          "RET_PROM_ANUAL_OPTM_PREF",
-          "GAP_RET_ANUAL",
-          "DESVEST_ANUAL",
-          "DESVEST_ANUAL_OPTM_PREF",
-          "GAP_DESV_ANUAL"
-        ),
+        c("RET_PROM_ANUAL", "RET_PROM_ANUAL_OPTM", "GAP_RET_ANUAL",
+          "DESVEST_ANUAL", "DESVEST_ANUAL_OPTM", "GAP_DESV_ANUAL"),
         digits = 1
       ) %>%
       formatCurrency(
@@ -398,36 +342,28 @@ server <- function(input, output, session) {
       )
   })
   
-  
-  # TABLA PARA DETALLE DE ACCIONES
   actions_data <- reactive({
     accts <- filtered_accts()
-    
     allowed <- accts %>% transmute(ID_CLIENTE, ID_CUENTA)
     sub <- df %>% inner_join(allowed, by = c("ID_CLIENTE", "ID_CUENTA"))
+    
+    base_cols <- c(
+      "NEMO","NAME","FLAG_ACCION_Q",
+      "CANTIDAD_EN_CUSTODIA","CANTIDAD_EN_CUSTODIA_OPT",
+      "GAP_Q_CUSTODIA","PESO","PESO_OPT",
+      "MONTO_EN_CUSTODIA","MONTO_EN_CUSTODIA_OPT",
+      "APORTE_ADICIONAL","RET_PROM_ANUAL","RET_ESPERADO_ANUAL_OPTM"
+    )
     
     if (input$cliente != "All" && input$cuenta != "All") {
       sub %>%
         filter(ID_CLIENTE == input$cliente, ID_CUENTA == input$cuenta) %>%
-        select(
-          NEMO, NAME, TIPO_ACCION_CARTERA, FLAG_ACCION_Q,
-          CANTIDAD_EN_CUSTODIA, CANTIDAD_EN_CUSTODIA_OPT,
-          GAP_Q_CUSTODIA, PESO, PESO_OPT_PREF,
-          MONTO_EN_CUSTODIA, MONTO_EN_CUSTODIA_OPT,
-          APORTE_ADICIONAL, RET_PROM_ANUAL, RET_ESPERADO_ANUAL_OPTM_PREF
-        ) %>%
+        select(any_of(base_cols)) %>%
         arrange(FLAG_ACCION_Q, NEMO)
     } else {
       sub %>%
         filter(FLAG_ACCION_Q %in% c("COMPRAR", "VENDER","MANTENER")) %>%
-        select(
-          ID_CLIENTE, ID_CUENTA,
-          NEMO, NAME, TIPO_ACCION_CARTERA, FLAG_ACCION_Q,
-          CANTIDAD_EN_CUSTODIA, CANTIDAD_EN_CUSTODIA_OPT,
-          GAP_Q_CUSTODIA, PESO, PESO_OPT_PREF,
-          MONTO_EN_CUSTODIA, MONTO_EN_CUSTODIA_OPT,
-          APORTE_ADICIONAL, RET_PROM_ANUAL, RET_ESPERADO_ANUAL_OPTM_PREF
-        ) %>%
+        select(any_of(c("ID_CLIENTE","ID_CUENTA", base_cols))) %>%
         arrange(FLAG_ACCION_Q, ID_CLIENTE, ID_CUENTA)
     }
   })
@@ -450,14 +386,13 @@ server <- function(input, output, session) {
         digits = 0
       ) %>%
       formatPercentage(
-        columns = intersect(c("PESO","PESO_OPT_PREF","RET_PROM_ANUAL","RET_ESPERADO_ANUAL_OPTM_PREF"), names(actions)),
+        columns = intersect(c("PESO","PESO_OPT","RET_PROM_ANUAL","RET_ESPERADO_ANUAL_OPTM"), names(actions)),
         digits = 1
       )
   })
   
-  # DESCARGA DE TABLAS CON FILTROS
   output$dl_resumen <- downloadHandler(
-    filename = function() paste0("resumen_carteras_", Sys.Date(), ".xlsx"),
+    filename = function() paste0("resumen_carteras_sin_pref_", Sys.Date(), ".xlsx"),
     content  = function(file) {
       wb <- createWorkbook()
       addWorksheet(wb, "Resumen")
@@ -467,7 +402,7 @@ server <- function(input, output, session) {
   )
   
   output$dl_actions <- downloadHandler(
-    filename = function() paste0("acciones_", Sys.Date(), ".xlsx"),
+    filename = function() paste0("acciones_sin_pref_", Sys.Date(), ".xlsx"),
     content  = function(file) {
       wb <- createWorkbook()
       addWorksheet(wb, "Acciones")
@@ -478,5 +413,4 @@ server <- function(input, output, session) {
 }
 
 shinyApp(ui, server)
-
 
