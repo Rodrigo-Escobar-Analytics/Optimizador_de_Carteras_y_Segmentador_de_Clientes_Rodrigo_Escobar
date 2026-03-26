@@ -178,14 +178,6 @@ CARTERA_TOTAL_MONTOS <- CARTERA_TOTAL_MONTOS %>%
     CANTIDAD_EN_CUSTODIA_TOTAL = replace_na(CANTIDAD_EN_CUSTODIA_TOTAL, 0))
 
 
-# Exporto tabla reumen
-
-write.table(CARTERA_TOTAL_MONTOS, file = "FILES/OUTPUT/07_TABLA_CLUSTERING_E1.CSV", sep = ";",
-            na = "", dec = ",", row.names = FALSE,
-            col.names = TRUE)
-
-
-
 # Selección de variables
 columnas <- c("ID_CLIENTE",
   "Q_CUENTAS",

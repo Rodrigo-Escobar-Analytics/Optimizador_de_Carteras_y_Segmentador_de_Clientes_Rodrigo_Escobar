@@ -136,7 +136,7 @@ print(grafico_mc_mensual)
 
 # EXPORTAR PNG
 
-ggsave(filename = "FILES/OUTPUT/O8_MATRIZ_RED_NEURONAL_TENSO_RIESGOSO_MES.png",
+ggsave(filename = "FILES/OUTPUT/08_MATRIZ_RED_NEURONAL_TENSO_RIESGOSO_MES.png",
   plot = grafico_mc_mensual,
   width = 8,
   height = 6,
