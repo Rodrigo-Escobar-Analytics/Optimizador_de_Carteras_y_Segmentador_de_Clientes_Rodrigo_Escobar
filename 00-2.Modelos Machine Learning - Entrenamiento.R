@@ -49,11 +49,6 @@ for (script in scripts) {
       log_msg(paste("Detalle:", conditionMessage(e)), "ERROR")
       log_msg("==== EJECUCION DETENIDA POR ERROR ====", "ERROR")
       stop(e)
-    },
-    warning = function(w) {
-      log_msg(paste("WARNING en script:", script), "WARNING")
-      log_msg(paste("Detalle:", conditionMessage(w)), "WARNING")
-      invokeRestart("muffleWarning")
     }
   )
 }
