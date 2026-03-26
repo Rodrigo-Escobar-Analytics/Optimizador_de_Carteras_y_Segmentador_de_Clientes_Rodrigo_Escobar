@@ -1,0 +1,7 @@
+[2026-03-26 07:42:20] [INFO] ==== INICIO DE EJECUCION ====
+[2026-03-26 07:42:20] [INFO] Iniciando script: 07b.Segmentacion Aplicación Mensual.R
+[2026-03-26 07:42:49] [OK] Script finalizado OK: 07b.Segmentacion Aplicación Mensual.R
+[2026-03-26 07:42:49] [INFO] Iniciando script: 08b.Alerta Temprana Red Neuronal Patrimonial - Mensual.R
+[2026-03-26 07:42:52] [WARNING] WARNING en script: 08b.Alerta Temprana Red Neuronal Patrimonial - Mensual.R
+[2026-03-26 07:42:52] [WARNING] Detalle: Some Python package requirements declared via `py_require()` are not installed in the selected Python environment: (C:/Users/landa/OneDrive/Documentos/.virtualenvs/r-keras/Scripts/python.exe)
+  numpy numpy<2

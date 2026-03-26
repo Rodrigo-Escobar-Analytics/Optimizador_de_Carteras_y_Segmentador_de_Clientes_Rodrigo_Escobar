@@ -1,0 +1,5 @@
+[2026-03-26 07:40:55] [INFO] ==== INICIO DE EJECUCION ====
+[2026-03-26 07:40:55] [INFO] Iniciando script: 07b.Segmentacion Aplicación Mensual.R
+[2026-03-26 07:40:56] [ERROR] ERROR en script: 07b.Segmentacion Aplicación Mensual.R
+[2026-03-26 07:40:56] [ERROR] Detalle: no se pudo encontrar la función "read_excel"
+[2026-03-26 07:40:56] [ERROR] ==== EJECUCION DETENIDA POR ERROR ====

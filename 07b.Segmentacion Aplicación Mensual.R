@@ -9,6 +9,7 @@ library(dplyr)
 library(openxlsx)
 library(tidyr)
 library(stringr)
+library(readxl)
 
 ##### CARGAR OBJETOS GUARDADOS #####
 
