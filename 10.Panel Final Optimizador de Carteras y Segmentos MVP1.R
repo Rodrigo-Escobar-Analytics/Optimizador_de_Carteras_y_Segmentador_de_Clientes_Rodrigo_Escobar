@@ -171,7 +171,7 @@ ui <- fluidPage(
   
   div(
     class = "titulo-principal",
-    h2("Panel Final Optimizador de Carteras MVP1"),
+    h2("Panel Final Optimizador de Carteras y Perfilamiento MVP1"),
     p("Seleccione el dashboard que desea abrir. Cada panel se ejecuta por separado para evitar conflictos entre filtros, tablas y descargas.")
   ),
   
@@ -253,5 +253,5 @@ server <- function(input, output, session) {
   })
 }
 
-shinyApp(ui, server)
+
 shinyApp(ui, server)
