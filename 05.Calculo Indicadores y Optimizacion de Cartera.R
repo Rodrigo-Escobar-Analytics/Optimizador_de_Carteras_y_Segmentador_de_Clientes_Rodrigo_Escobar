@@ -45,44 +45,44 @@ rf_mensual = rf / 12
 TICKERS <- DICCIONARIO_TICKERS %>% distinct(NEMO) %>% pull(NEMO)
 
 
-#PRECIOS_HISTORICOS <- read_csv2("FILES/INTERMEDIO/05_PRECIOS_ACCIONES_TOTAL.CSV")
-#names(PRECIOS_HISTORICOS)[1]<-"symbol"
-#names(PRECIOS_HISTORICOS)[2]<-"date"
-#names(PRECIOS_HISTORICOS)[8]<-"adjusted"
+PRECIOS_HISTORICOS <- read_csv2("FILES/INTERMEDIO/05_PRECIOS_ACCIONES_TOTAL.CSV")
+names(PRECIOS_HISTORICOS)[1]<-"symbol"
+names(PRECIOS_HISTORICOS)[2]<-"date"
+names(PRECIOS_HISTORICOS)[8]<-"adjusted"
 
 
 # EXTRAIGO LA INFORMACION DE LOS TICKERS DEL LISTADO DE ACCIONES
 
-PRECIOS_HISTORICOS <- tq_get_batch(TICKERS = TICKERS,
-  from  = Sys.Date() - 365)
+#PRECIOS_HISTORICOS <- tq_get_batch(TICKERS = TICKERS,
+#  from  = Sys.Date() - 365)
 
 # REVISO EL TOTAL DE TICKERS EXTRAIDOS
 
-tickers_extraidos <- unique(PRECIOS_HISTORICOS$symbol)
+#tickers_extraidos <- unique(PRECIOS_HISTORICOS$symbol)
 
 # DETERMINO FALTANTES
 
-tickers_faltantes <- setdiff(TICKERS, tickers_extraidos)
+#tickers_faltantes <- setdiff(TICKERS, tickers_extraidos)
 
 # REINGRESO FUNCION PARA OBTENER FALTANTES
 
-if (length(tickers_faltantes) > 0) {
+#if (length(tickers_faltantes) > 0) {
 
-  PRECIOS_REINTENTO <- tq_get_batch(
-    TICKERS   = tickers_faltantes,
-    from      = Sys.Date() - 365,
-    batch_size = 5,
-    sleep_sec  = 15)
+#  PRECIOS_REINTENTO <- tq_get_batch(
+#    TICKERS   = tickers_faltantes,
+#    from      = Sys.Date() - 365,
+#    batch_size = 5,
+#    sleep_sec  = 15)
 
-} else {
-  PRECIOS_REINTENTO <- NULL
-}
+#} else {
+#  PRECIOS_REINTENTO <- NULL
+#}
 
 # CONCATENO BASES
 
-PRECIOS_HISTORICOS_FINAL <- bind_rows(PRECIOS_HISTORICOS,
-  PRECIOS_REINTENTO) %>%
-  distinct(symbol, date, .keep_all = TRUE)
+#PRECIOS_HISTORICOS_FINAL <- bind_rows(PRECIOS_HISTORICOS,
+#  PRECIOS_REINTENTO) %>%
+#  distinct(symbol, date, .keep_all = TRUE)
 
 
 # CALCULO MONTO TOTAL INVERTIDO EN LA CUENTA EN CLP
@@ -102,7 +102,10 @@ TBL_PESOS_CUENTA <- TBL_DATA_SHARES_ACCOUNTS %>% left_join(
 
 # CALCULO DE LAS ACCIONES: RETORNO DIARIO, DESVIACION ESTANDAR DIARIA
 
-METRICAS_ACCION <- PRECIOS_HISTORICOS %>% group_by(symbol) %>%
+METRICAS_ACCION <- PRECIOS_HISTORICOS %>% 
+  
+  filter(!is.na(date), !is.na(adjusted)) %>%
+  group_by(symbol) %>%
   tq_transmute(select     = adjusted,
     mutate_fun = periodReturn,
     period     = "daily",
@@ -218,6 +221,13 @@ RESULTADOS_RESUMEN <- vector("list", length(CUENTAS))
 
 # || MODELO OPTIMIZADOR DE CARTERAS PARA LA BASE COMPLETA ||
 
+UNIVERSO_OPTIMIZACION_bckp<-UNIVERSO_OPTIMIZACION
+RETORNOS_HISTORICOS_PIVOT_bckp<-RETORNOS_HISTORICOS_PIVOT
+
+
+
+#UNIVERSO_OPTIMIZACION<-UNIVERSO_OPTIMIZACION_bckp
+#RETORNOS_HISTORICOS_PIVOTz-RETORNOS_HISTORICOS_PIVOT_bckp
 
 for (i in seq_along(CUENTAS)) {
   
@@ -232,10 +242,13 @@ for (i in seq_along(CUENTAS)) {
   # PROMEDIO POR ACTIVO INDICAR TABLA PRINCIPAL DONDE SE ENCUENTRA LAS CARTERAS A OPTIMIZAR
   uni <- UNIVERSO_OPTIMIZACION %>%
     filter(ID_CUENTA == id_cuenta) %>%
+    filter(!is.na(NEMO), !is.na(RET_PROM_DIARIO)) %>%
     distinct(NEMO, .keep_all = TRUE) %>%
     select(NEMO, RET_PROM_DIARIO)
   
   nemos <- uni$NEMO
+  nemos <- nemos[!is.na(nemos)]
+  
   mu <- as.numeric(uni$RET_PROM_DIARIO)
   names(mu) <- nemos
   
@@ -246,6 +259,7 @@ for (i in seq_along(CUENTAS)) {
   R_c <- RETORNOS_HISTORICOS_PIVOT %>%
     select(all_of(c("FECHA", nemos))) %>%
     select(-FECHA) %>%
+    mutate(across(everything(), as.numeric)) %>%
     as.matrix()
   
   # CALCULO DE LA COVARIANZA
@@ -276,9 +290,9 @@ for (i in seq_along(CUENTAS)) {
       local_opts = list(
         algorithm = "NLOPT_LN_COBYLA",
         #MAXIMA CANTIDAD DE EVALUACIONES
-        maxeval   = 8000),
+        maxeval   = 15000),
       #MAXIMA CANTIDAD DE EVALUACIONES
-      maxeval = 8000))
+      maxeval = 15000))
   
   w_opt <- as.numeric(res$solution)
   names(w_opt) <- nemos
@@ -306,8 +320,8 @@ for (i in seq_along(CUENTAS)) {
     RET_ESPERADO_ANUAL_OPTM   = ret_opt * 252,
     DESVEST_MENSUAL_OPTM = desvest_opt * sqrt(21),
     DESVEST_ANUAL_OPTM   = desvest_opt * sqrt(252),
-    SHARPE_MENSUAL_OPTM  = (ret_opt * 21) / (desvest_opt * sqrt(21)),
-    SHARPE_ANUAL_OPTM    = (ret_opt * 252) / (desvest_opt * sqrt(252)),
+    SHARPE_MENSUAL_OPTM  = ((ret_opt-rf_diario) * 21) / (desvest_opt * sqrt(21)),
+    SHARPE_ANUAL_OPTM    = ((ret_opt-rf_diario) * 252) / (desvest_opt * sqrt(252)),
     MSG = res$message)}
   
 
@@ -414,4 +428,4 @@ write.table(PRECIOS_HISTORICOS, file = "FILES/INTERMEDIO/05_PRECIOS_ACCIONES_TOT
             col.names = TRUE)
 
 
-#21:16 - 
+#22:00 - 

@@ -76,16 +76,19 @@ CUENTAS_DATOS<-TBL_DATA_SHARES_ACCOUNTS_FINAL%>%select(ID_CLIENTE,ID_CUENTA,USER
 # CALCULO DE LAS ACCIONES: RETORNO DIARIO, DESVIACION ESTANDAR DIARIA
 
 METRICAS_ACCION <- PRECIOS_HISTORICOS %>%
+  filter(!is.na(FECHA), !is.na(PRECIO)) %>%
   group_by(NEMO) %>%
   tq_transmute(
     select     = PRECIO,
     mutate_fun = periodReturn,
     period     = "daily",
-    col_rename = "RET_DIARIO") %>%
+    col_rename = "RET_DIARIO"
+  ) %>%
   summarise(
     RET_PROM_DIARIO = mean(RET_DIARIO, na.rm = TRUE),
     DE_DIARIA       = sd(RET_DIARIO, na.rm = TRUE),
-    .groups = "drop")
+    .groups = "drop"
+  )
 
 
 # CRUCE INFORMACION DE LAS CUENTAS CON LA BASE DE PREFERENCIAS
@@ -175,6 +178,11 @@ RESULTADOS_RESUMEN <- vector("list", length(CUENTAS))
 
 # || MODELO OPTIMIZADOR DE CARTERAS PARA LA BASE COMPLETA ||
 
+
+UNIVERSO_OPTIMIZACION_bckp<-UNIVERSO_OPTIMIZACION
+RETORNOS_HISTORICOS_PIVOT_bckp<-RETORNOS_HISTORICOS_PIVOT
+
+
 # PARA LA CUENTA I DENTRO DE LA LISTA CUENTAS
 
 for (i in seq_along(CUENTAS)) {
@@ -190,10 +198,13 @@ for (i in seq_along(CUENTAS)) {
   # PROMEDIO POR ACTIVO INDICAR TABLA PRINCIPAL DONDE SE ENCUENTRA LAS CARTERAS A OPTIMIZAR
   uni <- UNIVERSO_OPTIMIZACION %>%
     filter(ID_CUENTA == id_cuenta) %>%
+    filter(!is.na(NEMO), !is.na(RET_PROM_DIARIO)) %>%
     distinct(NEMO, .keep_all = TRUE) %>%
     select(NEMO, RET_PROM_DIARIO)
   
   nemos <- uni$NEMO
+  nemos <- nemos[!is.na(nemos)]
+  
   mu <- as.numeric(uni$RET_PROM_DIARIO)
   names(mu) <- nemos
   
@@ -204,7 +215,9 @@ for (i in seq_along(CUENTAS)) {
   R_c <- RETORNOS_HISTORICOS_PIVOT %>%
     select(all_of(c("FECHA", nemos))) %>%
     select(-FECHA) %>%
+    mutate(across(everything(), as.numeric)) %>%
     as.matrix()
+  
   
   # CALCULO DE LA COVARIANZA
   
@@ -234,9 +247,9 @@ for (i in seq_along(CUENTAS)) {
       local_opts = list(
         algorithm = "NLOPT_LN_COBYLA",
         #MAXIMA CANTIDAD DE EVALUACIONES
-        maxeval   = 8000),
+        maxeval   = 15000),
       #MAXIMA CANTIDAD DE EVALUACIONES
-      maxeval = 8000))
+      maxeval = 15000))
   
   w_opt <- as.numeric(res$solution)
   names(w_opt) <- nemos
@@ -264,8 +277,8 @@ for (i in seq_along(CUENTAS)) {
     RET_ESPERADO_ANUAL_OPTM_PREF   = ret_opt * 252,
     DESVEST_MENSUAL_OPTM_PREF = desvest_opt * sqrt(21),
     DESVEST_ANUAL_OPTM_PREF   = desvest_opt * sqrt(252),
-    SHARPE_MENSUAL_OPTM_PREF  = (ret_opt * 21) / (desvest_opt * sqrt(21)),
-    SHARPE_ANUAL_OPTM_PREF    = (ret_opt * 252) / (desvest_opt * sqrt(252)),
+    SHARPE_MENSUAL_OPTM_PREF  = ((ret_opt-rf_diario) * 21) / (desvest_opt * sqrt(21)),
+    SHARPE_ANUAL_OPTM_PREF    = ((ret_opt-rf_diario) * 252) / (desvest_opt * sqrt(252)),
     MSG_PREF = res$message
   )}
 
